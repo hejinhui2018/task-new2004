@@ -87,3 +87,61 @@ export function createSampleHypothesis(id = 'h_main', name = '主解释（T1 发
     positions: {},
   };
 }
+
+// ---------- 证据复核内置案例：T2 探沟 ----------
+// 时序（早→晚）：早期垫土 [205] → 中部淤土 [203] → 晚期沟内堆积（北区 [201] / 南区 [204] 两条记录，等同）
+// 撤回等同 e201 前：[204]「纪年砖」最晚 600 与 [205]「碳样」最早 900 的最短冲突链
+// 经等同 [204]＝[201] 走间接记录 r204；撤回后类拆开，冲突仍在，但链改走 r202→r203，
+// [201] 的最晚年界由 600（来自 [204]）放宽为“不限”。保留等同则一切结果不变。
+// r204（[201] 直接晚于 [205]）由 r201+r203 传递表达，矩阵中隐藏。
+
+export const REVIEW_CASE_ID = 'h_review_case';
+
+const reviewUnits: Unit[] = [
+  {
+    id: 'u201', code: '[201]', kind: 'deposit', note: '晚期沟内堆积（北区记录），与 [204] 同一层位',
+    dates: [], phaseId: null,
+  },
+  {
+    id: 'u204', code: '[204]', kind: 'deposit', note: '晚期沟内堆积（南区记录），出纪年砖',
+    dates: [{ early: 500, late: 600, label: '纪年砖（沟内堆积）' }],
+    phaseId: null,
+  },
+  {
+    id: 'u203', code: '[203]', kind: 'deposit', note: '中部淤土层',
+    dates: [], phaseId: null,
+  },
+  {
+    id: 'u205', code: '[205]', kind: 'deposit', note: '早期垫土，碳样取自此层',
+    dates: [{ early: 900, late: 1000, label: '碳十四样（早期垫土）' }],
+    phaseId: null,
+  },
+];
+
+const reviewAbove: AboveRelation[] = [
+  { id: 'r201', younger: 'u201', older: 'u203', note: '北区分层 [201] 压淤土 [203]' },
+  { id: 'r202', younger: 'u204', older: 'u203', note: '南区分层 [204] 压淤土 [203]' },
+  { id: 'r203', younger: 'u203', older: 'u205', note: '淤土 [203] 压早期垫土 [205]' },
+  // r204 由 r201+r203 传递表达，矩阵中自动隐藏
+  { id: 'r204', younger: 'u201', older: 'u205', note: '北区 [201] 整体晚于垫土 [205]（间接）' },
+];
+
+const reviewEquivs: Equivalence[] = [
+  { id: 'e201', a: 'u201', b: 'u204' },
+];
+
+export function createReviewCaseHypothesis(
+  id: string = REVIEW_CASE_ID,
+  name: string = '复核案例（T2 探沟）',
+): Hypothesis {
+  return {
+    id,
+    name,
+    unitIds: reviewUnits.map((u) => u.id),
+    units: Object.fromEntries(reviewUnits.map((u) => [u.id, structuredClone(u)])),
+    above: reviewAbove.map((r) => ({ ...r })),
+    equivs: reviewEquivs.map((e) => ({ ...e })),
+    phases: [],
+    positions: {},
+  };
+}

@@ -94,6 +94,31 @@ export type Selection =
   | { type: 'edge'; id: string }
   | { type: 'none' };
 
+// ---------- 证据复核 ----------
+
+/** 复核处置：保留＝继续采信；撤回＝不再采信（候选中移除）；暂不采用＝本轮搁置（解释中保留） */
+export type ReviewDisposition = 'keep' | 'withdraw' | 'defer';
+
+/** 可送审的证据类型：出土物年代 / 人工分期 / 早晚关系 / 等同关系 */
+export type EvidenceType = 'date' | 'phase' | 'above' | 'equiv';
+
+/** 一条待审证据变更（在候选快照被采用前不影响当前矩阵） */
+export interface ReviewItem {
+  id: string;
+  evidence: EvidenceType;
+  /** above/equiv：关系 id；date：`date:<unitId>:<index>`；phase：`phase:<unitId>` */
+  refId: string;
+  /** date/phase 证据所在单元 */
+  unitId?: string;
+  /** date 专用：创建时的下标 */
+  dateIndex?: number;
+  /** date 专用：创建时的内容快照，用于发现“矩阵已被直接编辑”的过期情况 */
+  dateSnapshot?: DateRange;
+  disposition: ReviewDisposition;
+  note: string;
+  createdAt: number;
+}
+
 export interface ProjectState {
   hypotheses: Record<string, Hypothesis>;
   hypothesisOrder: string[];

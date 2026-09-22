@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { store, useStore } from './lib/store';
+import { store, useStore, type AdoptionNotice as AdoptionNoticeData } from './lib/store';
 import { quotient, transitiveReduction, explainPath } from './lib/graph';
 import { propagate } from './lib/dates';
 import { layoutMatrix } from './lib/layout';
 import Canvas from './components/Canvas';
 import RecordTab from './components/RecordTab';
 import DatesTab from './components/DatesTab';
+import ReviewTab from './components/ReviewTab';
 import { CompareModal, HypothesesTab } from './components/HypothesesTab';
 import ChainView from './components/ChainView';
 import { CodeChip } from './components/ui';
 
-type Tab = 'record' | 'dates' | 'hypotheses';
+type Tab = 'record' | 'dates' | 'review' | 'hypotheses';
 
 export default function App() {
   const state = useStore();
-  const { project, session } = state;
+  const { project, session, reviews } = state;
   const h = project.hypotheses[project.currentId];
+  const reviewItems = reviews[project.currentId]?.items ?? [];
+  const reviewDiff = useMemo(() => (reviewItems.length ? store.getReviewDiff() : null), [h, reviewItems]);
   const [tab, setTab] = useState<Tab>('record');
   const [explainMode, setExplainMode] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
@@ -118,6 +121,16 @@ export default function App() {
               <span className="badge good">✓ 年代自洽</span>
             )}
           </span>
+          {reviewItems.length > 0 && reviewDiff && (
+            <button
+              className="review-pill"
+              title="查看候选变更的影响差异"
+              onClick={() => setTab('review')}
+            >
+              候选 {reviewItems.length} · 影响 {reviewDiff.affectedUnitIds.length} ·
+              冲突 {reviewDiff.conflictsBefore.length}→{reviewDiff.conflictsAfter.length}
+            </button>
+          )}
         </div>
         <div className="spacer" />
         <div className="group">
@@ -195,6 +208,9 @@ export default function App() {
         )}
 
         <div className="sidebar">
+          {session.notice && session.notice.hypothesisId === h.id && (
+            <AdoptionNotice h={h} notice={session.notice} onDismiss={() => store.dismissNotice()} />
+          )}
           <div className="tabs">
             <button className={tab === 'record' ? 'active' : ''} onClick={() => setTab('record')}>
               录入与校核{session.pending ? ' ●' : ''}
@@ -202,6 +218,9 @@ export default function App() {
             <button className={tab === 'dates' ? 'active' : ''} onClick={() => setTab('dates')}>
               年代/分期
               {prop.dateConflicts.length + prop.phaseConflicts.length > 0 ? ' ●' : ''}
+            </button>
+            <button className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}>
+              证据复核{reviewItems.length ? `（${reviewItems.length}）` : ''}
             </button>
             <button className={tab === 'hypotheses' ? 'active' : ''} onClick={() => setTab('hypotheses')}>
               假设
@@ -212,6 +231,7 @@ export default function App() {
               <RecordTab h={h} selection={session.selection} pending={session.pending} />
             )}
             {tab === 'dates' && <DatesTab h={h} prop={prop} />}
+            {tab === 'review' && <ReviewTab h={h} items={reviewItems} />}
             {tab === 'hypotheses' && (
               <HypothesesTab project={project} onCompare={(a, b) => setCompare({ a, b })} />
             )}
@@ -226,6 +246,44 @@ export default function App() {
           bId={compare.b}
           onClose={() => setCompare(null)}
         />
+      )}
+    </div>
+  );
+}
+
+function AdoptionNotice({
+  h,
+  notice,
+  onDismiss,
+}: {
+  h: ReturnType<typeof store.getState>['project']['hypotheses'][string];
+  notice: AdoptionNoticeData;
+  onDismiss(): void;
+}) {
+  return (
+    <div className="callout adoption-callout">
+      <div className="inline-row" style={{ justifyContent: 'space-between' }}>
+        <span className="badge good">✓ 候选已采用（一条可撤销事务）</span>
+        <button className="ghost small" onClick={onDismiss}>关闭</button>
+      </div>
+      <p className="small" style={{ margin: '4px 0' }}>
+        撤回 {notice.withdrawnCount} 条证据，影响 {notice.affectedCount} 个单元；
+        可随时 Ctrl+Z 整体撤销本次采用。
+        {notice.danglingCount > 0 && ` ${notice.danglingCount} 条引用在采用前已失效，未重复删除。`}
+      </p>
+      {notice.orphans.length > 0 && (
+        <div>
+          <span className="badge warning">● {notice.orphans.length} 个单元无法在矩阵中定位</span>
+          {notice.orphans.map((o) => (
+            <p className="small" key={o.unitId} style={{ margin: '4px 0' }}>
+              <CodeChip code={h.units[o.unitId]?.code ?? o.unitId} kind={h.units[o.unitId]?.kind} />
+              {o.reason}
+            </p>
+          ))}
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            这些单元没有被删除：请补录早晚/等同关系，或撤销本次采用改判为「暂不采用」。
+          </p>
+        </div>
       )}
     </div>
   );

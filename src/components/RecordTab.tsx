@@ -3,6 +3,7 @@ import type { Hypothesis, Selection, PendingChange, UnitKind } from '../lib/type
 import { UNIT_KIND_LABEL } from '../lib/types';
 import { store } from '../lib/store';
 import { reducedEdges, transitiveReduction, explainPath } from '../lib/graph';
+import { dateRefId, phaseRefId } from '../lib/review';
 import ChainView from './ChainView';
 import PendingCallout from './PendingCallout';
 import { CodeChip } from './ui';
@@ -216,12 +217,20 @@ function SelectionDetail({ h, selection }: { h: Hypothesis; selection: Selection
         </div>
         <div className="field">
           <label>人工分期</label>
-          <select value={u.phaseId ?? ''} onChange={(e) => store.setUnitPhase(id, e.target.value || null)}>
-            <option value="">（未分期）</option>
-            {[...h.phases].sort((a, b) => a.rank - b.rank).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}（序 {p.rank}）</option>
-            ))}
-          </select>
+          <div className="inline-row">
+            <select style={{ flex: 1 }} value={u.phaseId ?? ''} onChange={(e) => store.setUnitPhase(id, e.target.value || null)}>
+              <option value="">（未分期）</option>
+              {[...h.phases].sort((a, b) => a.rank - b.rank).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}（序 {p.rank}）</option>
+              ))}
+            </select>
+            {u.phaseId && (
+              <button className="ghost small" title="把该人工分期指派送复核"
+                onClick={() => store.addReviewItem({ evidence: 'phase', refId: phaseRefId(id), unitId: id })}>
+                送审
+              </button>
+            )}
+          </div>
         </div>
 
         <DateEditor h={h} unitId={id} />
@@ -255,6 +264,10 @@ function SelectionDetail({ h, selection }: { h: Hypothesis; selection: Selection
         <span className="muted">晚于</span>
         <CodeChip code={h.units[rel.older].code} kind={h.units[rel.older].kind} />
         <span className="spacer" />
+        <button className="ghost small" title="作为待审证据送复核"
+          onClick={() => store.addReviewItem({ evidence: 'above', refId: rel.id })}>
+          送审
+        </button>
         <button className="ghost danger small" onClick={() => store.deleteAbove(rel.id)}>删除</button>
       </div>
       <div className="field">
@@ -319,6 +332,18 @@ function DateEditor({ h, unitId }: { h: Hypothesis; unitId: string }) {
             value={d.label}
             onChange={(e) => store.updateDate(unitId, i, { label: e.target.value })}
           />
+          <button className="ghost small" title="作为待审证据送复核"
+            onClick={() =>
+              store.addReviewItem({
+                evidence: 'date',
+                refId: dateRefId(unitId, i),
+                unitId,
+                dateIndex: i,
+                dateSnapshot: { ...d },
+              })
+            }>
+            送审
+          </button>
           <button className="ghost danger" onClick={() => store.deleteDate(unitId, i)}>×</button>
         </div>
       ))}
@@ -373,6 +398,10 @@ function AllRelations({ h }: { h: Hypothesis; selection: Selection }) {
             <span className="muted">＝</span>
             <CodeChip code={h.units[e.b].code} kind={h.units[e.b].kind} />
             <span className="spacer" />
+            <button className="ghost small" title="作为待审证据送复核"
+              onClick={() => store.addReviewItem({ evidence: 'equiv', refId: e.id })}>
+              送审
+            </button>
             <button className="ghost danger small" onClick={() => store.deleteEquiv(e.id)}>拆组</button>
           </div>
         ))}
