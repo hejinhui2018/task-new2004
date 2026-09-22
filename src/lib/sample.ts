@@ -87,3 +87,58 @@ export function createSampleHypothesis(id = 'h_main', name = '主解释（T1 发
     positions: {},
   };
 }
+
+// ---------- 内置复核演示案例：H3 探方 ----------
+// 传递链：[401] 晚于 [402] ≡ [403] 晚于 [404]。
+// [401] 的开元通宝（700–780，要求不晚于 780）与 [404] 的影青瓷片（1000–1080，要求不早于 1000）
+// 沿该链形成年代无解，矛盾链正好穿过等同 [402]＝[403]。
+// 在证据复核中撤回该等同 → 等同类拆开、冲突链解除；标记保留 → 结果不变。
+const demoPhases: Phase[] = [
+  { id: 'pd0', name: '早期堆积', rank: 0 },
+  { id: 'pd1', name: '晚期活动', rank: 1 },
+];
+
+const demoUnits: Unit[] = [
+  {
+    id: 'u401', code: '[401]', kind: 'deposit', note: '灰坑填土，内出开元通宝',
+    dates: [{ early: 700, late: 780, label: '开元通宝' }],
+    phaseId: 'pd1',
+  },
+  {
+    id: 'u402', code: '[402]', kind: 'deposit', note: '居住面（东段），被灰坑填土所压',
+    dates: [], phaseId: 'pd1',
+  },
+  {
+    id: 'u403', code: '[403]', kind: 'deposit', note: '居住面（西段），与 [402] 疑为同一层面',
+    dates: [], phaseId: 'pd1',
+  },
+  {
+    id: 'u404', code: '[404]', kind: 'deposit', note: '下层堆积，内出影青瓷片',
+    dates: [{ early: 1000, late: 1080, label: '影青瓷片' }],
+    phaseId: 'pd0',
+  },
+];
+
+const demoAbove: AboveRelation[] = [
+  { id: 'rd1', younger: 'u401', older: 'u402', note: '灰坑填土 [401] 压居住面 [402]' },
+  { id: 'rd2', younger: 'u403', older: 'u404', note: '居住面 [403] 压下层堆积 [404]' },
+];
+
+const demoEquivs: Equivalence[] = [
+  { id: 'ed1', a: 'u402', b: 'u403' },
+];
+
+export const REVIEW_DEMO_ID = 'h_review_demo';
+
+export function createReviewDemoHypothesis(id = REVIEW_DEMO_ID, name = '复核演示（H3 探方）'): Hypothesis {
+  return {
+    id,
+    name,
+    unitIds: demoUnits.map((u) => u.id),
+    units: Object.fromEntries(demoUnits.map((u) => [u.id, structuredClone(u)])),
+    above: demoAbove.map((r) => ({ ...r })),
+    equivs: demoEquivs.map((e) => ({ ...e })),
+    phases: demoPhases.map((p) => ({ ...p })),
+    positions: {},
+  };
+}

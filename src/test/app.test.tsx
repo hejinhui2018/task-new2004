@@ -68,3 +68,75 @@ describe('App 冒烟挂载', () => {
     expect(h1.above.length).toBe(h0.above.length);
   });
 });
+
+describe('证据复核流程', () => {
+  it('演示案例：首屏显示候选摘要，候选不污染当前矩阵，采用可撤销', async () => {
+    act(() => {
+      store.loadReviewDemo();
+    });
+    await act(async () => {
+      root.render(React.createElement(App));
+    });
+    // 首屏工具栏出现复核摘要（影响单元 + 冲突增减）
+    let text = container.textContent ?? '';
+    expect(text).toContain('复核中 · 影响 4 单元 · 冲突 1→0');
+
+    // 切到复核页：候选变更栏与年代界前后值
+    const tabBtn = [...container.querySelectorAll('.tabs button')].find((b) =>
+      (b.textContent ?? '').startsWith('复核'),
+    )!;
+    await act(async () => {
+      tabBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    text = container.textContent ?? '';
+    expect(text).toContain('候选变更栏');
+    expect(text).toContain('候选与当前解释的差异');
+    expect(text).toContain('年代 / 分期界前后值');
+    expect(text).toContain('等同类拆分');
+
+    // 候选未写入：当前矩阵仍含等同
+    const p = store.getState().project;
+    expect(p.hypotheses[p.currentId].equivs).toHaveLength(1);
+
+    // 采用后写入一条可撤销事务
+    act(() => {
+      store.adoptReview();
+    });
+    await act(async () => {
+      root.render(React.createElement(App));
+    });
+    expect(store.getState().project.hypotheses[p.currentId].equivs).toHaveLength(0);
+    expect(container.textContent ?? '').not.toContain('复核中 ·');
+    act(() => {
+      store.undo();
+    });
+    expect(store.getState().project.hypotheses[p.currentId].equivs).toHaveLength(1);
+  });
+
+  it('从空白复核开始：添加候选项后显示差异，取消后恢复', async () => {
+    await act(async () => {
+      root.render(React.createElement(App));
+    });
+    // 开启复核并暂存一条撤回
+    act(() => {
+      store.startReview();
+      store.addReviewItem({ kind: 'equiv', equivId: 'e1' }, 'retract');
+    });
+    await act(async () => {
+      root.render(React.createElement(App));
+    });
+    let text = container.textContent ?? '';
+    expect(text).toContain('复核中 · 影响 2 单元 · 冲突 0→0');
+    // 取消复核：摘要消失、矩阵不变
+    act(() => {
+      store.cancelReview();
+    });
+    await act(async () => {
+      root.render(React.createElement(App));
+    });
+    text = container.textContent ?? '';
+    expect(text).not.toContain('复核中 ·');
+    const p = store.getState().project;
+    expect(p.hypotheses[p.currentId].equivs).toHaveLength(1);
+  });
+});

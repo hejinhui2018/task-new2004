@@ -22,6 +22,8 @@ interface CanvasProps {
   onExplainPick(unitId: string): void;
   conflict: ConflictChain | null;
   pendingEdge: { younger: string; older: string } | null;
+  /** 复核候选中标记“撤回”的关系 id（橙色虚线提示，不影响当前矩阵） */
+  reviewRetractEdgeIds: Set<string>;
   onCommitNodePosition(root: string, pos: { x: number; y: number }): void;
   onResetPositions(): void;
 }
@@ -59,7 +61,8 @@ export default function Canvas(props: CanvasProps) {
   const {
     h, q, lay, prop, hiddenIds, showHidden, onToggleHidden,
     selection, onSelect, explainMode, explainFrom, explainTo, explainSteps,
-    onExplainPick, conflict, pendingEdge, onCommitNodePosition, onResetPositions,
+    onExplainPick, conflict, pendingEdge, reviewRetractEdgeIds,
+    onCommitNodePosition, onResetPositions,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -257,6 +260,7 @@ export default function Canvas(props: CanvasProps) {
     let cls = hidden ? 'hidden-edge' : '';
     if (explainEdgeIds.has(e.rel.id)) cls = 'highlight';
     if (conflictEdgeIds.has(e.rel.id)) cls = 'conflict';
+    if (reviewRetractEdgeIds.has(e.rel.id)) cls = cls ? `${cls} review-retract` : 'review-retract';
     drawEdge(e.rel.id, e.rel.younger, e.rel.older, cls);
   }
   if (pendingEdge && conflict) {
@@ -365,6 +369,9 @@ export default function Canvas(props: CanvasProps) {
         <div className="row"><span className="line" />直接早晚连线（晚 → 早）</div>
         <div className="row"><span className="line hidden" />被约简的传递关系</div>
         <div className="row"><span className="line equiv" />＝ 等同（节点已合并）</div>
+        {reviewRetractEdgeIds.size > 0 && (
+          <div className="row"><span className="line retract" />复核候选撤回（未生效）</div>
+        )}
       </div>
 
       {explainMode && (

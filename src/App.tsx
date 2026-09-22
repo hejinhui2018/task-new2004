@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { store, useStore } from './lib/store';
 import { quotient, transitiveReduction, explainPath } from './lib/graph';
 import { propagate } from './lib/dates';
+import { buildCandidate } from './lib/review';
 import { layoutMatrix } from './lib/layout';
 import Canvas from './components/Canvas';
 import RecordTab from './components/RecordTab';
 import DatesTab from './components/DatesTab';
+import ReviewTab from './components/ReviewTab';
 import { CompareModal, HypothesesTab } from './components/HypothesesTab';
 import ChainView from './components/ChainView';
 import { CodeChip } from './components/ui';
 
-type Tab = 'record' | 'dates' | 'hypotheses';
+type Tab = 'record' | 'dates' | 'hypotheses' | 'review';
 
 export default function App() {
   const state = useStore();
@@ -33,6 +35,22 @@ export default function App() {
   const prop = useMemo(() => propagate(h), [h]);
   const lay = useMemo(() => layoutMatrix(h, h.positions), [h]);
   const hiddenIds = useMemo(() => transitiveReduction(h), [h]);
+
+  // 证据复核：候选快照在隔离副本上实时重算，不写回当前矩阵
+  const review = session.review;
+  const reviewResult = useMemo(
+    () => (review && review.hypothesisId === h.id ? buildCandidate(h, review.items) : null),
+    [h, review],
+  );
+  const reviewRetractEdgeIds = useMemo(() => {
+    const s = new Set<string>();
+    if (review && review.hypothesisId === h.id) {
+      for (const it of review.items) {
+        if (it.action === 'retract' && it.target.kind === 'above') s.add(it.target.relId);
+      }
+    }
+    return s;
+  }, [h, review]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -119,6 +137,18 @@ export default function App() {
             )}
           </span>
         </div>
+        {reviewResult && (
+          <div className="group">
+            <button
+              className="badge warning review-badge"
+              onClick={() => setTab('review')}
+              title="证据复核进行中：点击查看候选与当前解释的差异"
+            >
+              复核中 · 影响 {reviewResult.diff.affectedUnits.length} 单元 · 冲突{' '}
+              {reviewResult.diff.conflictsBefore}→{reviewResult.diff.conflictsAfter}
+            </button>
+          </div>
+        )}
         <div className="spacer" />
         <div className="group">
           <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
@@ -154,6 +184,7 @@ export default function App() {
           onExplainPick={onExplainPick}
           conflict={conflict}
           pendingEdge={pendingEdge}
+          reviewRetractEdgeIds={reviewRetractEdgeIds}
           onCommitNodePosition={(root, pos) => store.setClassPosition(root, pos)}
           onResetPositions={() => store.resetLayout()}
         />
@@ -206,6 +237,9 @@ export default function App() {
             <button className={tab === 'hypotheses' ? 'active' : ''} onClick={() => setTab('hypotheses')}>
               假设
             </button>
+            <button className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}>
+              复核{session.review ? ' ●' : ''}
+            </button>
           </div>
           <div className="tab-body">
             {tab === 'record' && (
@@ -214,6 +248,16 @@ export default function App() {
             {tab === 'dates' && <DatesTab h={h} prop={prop} />}
             {tab === 'hypotheses' && (
               <HypothesesTab project={project} onCompare={(a, b) => setCompare({ a, b })} />
+            )}
+            {tab === 'review' && (
+              <ReviewTab
+                h={h}
+                review={session.review}
+                result={reviewResult}
+                reviewHypothesisName={
+                  session.review ? project.hypotheses[session.review.hypothesisId]?.name ?? null : null
+                }
+              />
             )}
           </div>
         </div>

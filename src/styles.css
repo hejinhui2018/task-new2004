@@ -247,6 +247,9 @@ textarea:focus {
 .legend .line.equiv {
   border-top: 2px dashed var(--kind-construction);
 }
+.legend .line.retract {
+  border-top: 2px dashed var(--warning);
+}
 
 /* ---------- SVG 节点与边 ---------- */
 .node-rect {
@@ -288,6 +291,13 @@ textarea:focus {
   stroke: var(--text-muted);
   stroke-dasharray: 5 4;
   opacity: 0.55;
+}
+/* 复核候选撤回：橙色虚线；与冲突/解释高亮组合时后者优先（故置于其前） */
+.edge-line.review-retract {
+  stroke: var(--warning);
+  stroke-width: 2.2;
+  stroke-dasharray: 7 4;
+  opacity: 1;
 }
 .edge-line.highlight {
   stroke: var(--explain);
@@ -586,6 +596,69 @@ textarea:focus {
   border-radius: 4px;
   padding: 0 4px;
   color: var(--text-secondary);
+}
+
+/* ---------- 证据复核 ---------- */
+.review-badge {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+.entity-item.review-item {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.seg button {
+  border: none;
+  border-radius: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.seg button + button {
+  border-left: 1px solid var(--hairline);
+}
+.seg button.active {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
+}
+.seg button.active.keep {
+  background: color-mix(in srgb, var(--good) 15%, var(--panel));
+  color: var(--good);
+}
+.seg button.active.retract {
+  background: color-mix(in srgb, var(--critical) 15%, var(--panel));
+  color: var(--critical);
+}
+.bound-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.bound-table th,
+.bound-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--gridline);
+  text-align: left;
+}
+.bound-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.bound-table td.changed {
+  color: var(--warning);
+  font-weight: 600;
 }
 
 ::-webkit-scrollbar {

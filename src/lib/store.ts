@@ -9,16 +9,23 @@ import type {
   PendingChange,
   Phase,
   ProjectState,
+  ReviewAction,
+  ReviewItem,
+  ReviewSession,
+  ReviewTarget,
   Selection,
   Unit,
   UnitKind,
 } from './types';
 import { validateAbove, validateEquiv } from './graph';
+import { buildCandidate, describeTarget, targetKey } from './review';
 import { History } from './history';
-import { createSampleHypothesis } from './sample';
+import { createReviewDemoHypothesis, createSampleHypothesis, REVIEW_DEMO_ID } from './sample';
 import { uid } from './uid';
 
 const STORAGE_KEY = 'harris-workbench-v1';
+/** 复核会话独立持久化（不属于撤销历史；旧版数据没有该键，按无复核打开） */
+const REVIEW_KEY = 'harris-workbench-review-v1';
 
 interface ProjectData {
   hypotheses: Record<string, Hypothesis>;
@@ -31,6 +38,7 @@ interface SessionState {
   pending: PendingChange | null;
   explainFrom: string | null;
   explainTo: string | null;
+  review: ReviewSession | null;
 }
 
 export interface StoreState {
@@ -56,6 +64,20 @@ function loadProject(): ProjectData {
     return data;
   } catch {
     return initialProject();
+  }
+}
+
+/** 恢复上次未完成的复核会话；键缺失、损坏或假设已删除时按无复核处理 */
+function loadReview(p: ProjectData): ReviewSession | null {
+  try {
+    const raw = localStorage.getItem(REVIEW_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw) as ReviewSession;
+    if (!r || typeof r !== 'object' || !Array.isArray(r.items)) return null;
+    if (!p.hypotheses[r.hypothesisId]) return null;
+    return r;
+  } catch {
+    return null;
   }
 }
 
@@ -102,6 +124,7 @@ let session: SessionState = {
   pending: null,
   explainFrom: null,
   explainTo: null,
+  review: loadReview(project),
 };
 
 const listeners = new Set<() => void>();
@@ -120,6 +143,8 @@ function persist(): void {
   saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      if (session.review) localStorage.setItem(REVIEW_KEY, JSON.stringify(session.review));
+      else localStorage.removeItem(REVIEW_KEY);
     } catch {
       /* 存储不可用时静默忽略 */
     }
@@ -370,6 +395,146 @@ const store = {
     return ok;
   },
 
+  // ---------- 证据复核：候选只存于会话，采用才写入当前假设 ----------
+  /** 为当前假设开启空的复核会话（已有会话时不重复开启） */
+  startReview(): void {
+    if (session.review) return;
+    session = {
+      ...session,
+      review: { id: uid('rev'), hypothesisId: project.currentId, items: [], createdAt: Date.now() },
+    };
+    persist();
+    emit();
+  },
+  /**
+   * 加入一条待审变更；同一目标重复加入时更新其处理意向。
+   * 目标在当前假设中不存在时拒绝并返回 null。不产生撤销历史。
+   */
+  addReviewItem(target: ReviewTarget, action: ReviewAction, note = ''): string | null {
+    const h = current();
+    if (session.review && session.review.hypothesisId !== h.id) return null;
+    const label = describeTarget(h, target);
+    if (!label) return null;
+    const review: ReviewSession = session.review ?? {
+      id: uid('rev'),
+      hypothesisId: h.id,
+      items: [],
+      createdAt: Date.now(),
+    };
+    const items = [...review.items];
+    const key = targetKey(target);
+    const i = items.findIndex((it) => targetKey(it.target) === key);
+    const item: ReviewItem = {
+      id: i >= 0 ? items[i].id : uid('ri'),
+      target,
+      action,
+      note: i >= 0 ? items[i].note : note,
+      label,
+      createdAt: i >= 0 ? items[i].createdAt : Date.now(),
+    };
+    if (i >= 0) items[i] = item;
+    else items.push(item);
+    session = { ...session, review: { ...review, items } };
+    persist();
+    emit();
+    return item.id;
+  },
+  setReviewAction(itemId: string, action: ReviewAction): void {
+    const r = session.review;
+    if (!r) return;
+    session = {
+      ...session,
+      review: { ...r, items: r.items.map((it) => (it.id === itemId ? { ...it, action } : it)) },
+    };
+    persist();
+    emit();
+  },
+  setReviewNote(itemId: string, note: string): void {
+    const r = session.review;
+    if (!r) return;
+    session = {
+      ...session,
+      review: { ...r, items: r.items.map((it) => (it.id === itemId ? { ...it, note } : it)) },
+    };
+    persist();
+    emit();
+  },
+  removeReviewItem(itemId: string): void {
+    const r = session.review;
+    if (!r) return;
+    session = { ...session, review: { ...r, items: r.items.filter((it) => it.id !== itemId) } };
+    persist();
+    emit();
+  },
+  /** 取消复核：丢弃全部候选变更，当前矩阵不受影响 */
+  cancelReview(): void {
+    if (!session.review) return;
+    session = { ...session, review: null };
+    persist();
+    emit();
+  },
+  /**
+   * 采用候选：把全部“撤回”项作为一条可撤销事务写入当前假设。
+   * 目标已缺失的项跳过（界面上已有无法定位提示）；保留/暂不采用项不改动。
+   */
+  adoptReview(): boolean {
+    const r = session.review;
+    if (!r || r.hypothesisId !== project.currentId) return false;
+    const { hypothesis: next, applied } = buildCandidate(current(), r.items);
+    if (applied.length > 0) {
+      commit({ ...project, hypotheses: { ...project.hypotheses, [next.id]: next } });
+      // 撤回证据后，被拦截的待处理修改可能已解除，刷新其矛盾链
+      if (session.pending) {
+        const still = revalidate(session.pending, current());
+        session = { ...session, pending: { ...session.pending, conflict: still } };
+      }
+    }
+    session = { ...session, review: null };
+    persist();
+    emit();
+    return true;
+  },
+  /**
+   * 载入内置复核演示案例（H3 探方）：两条年代证据、等同关系与传递早晚链。
+   * 等同 [402]＝[403] 预置为“撤回”候选——撤回会拆分类并解除冲突链，改标保留则结果不变。
+   */
+  loadReviewDemo(): void {
+    if (!project.hypotheses[REVIEW_DEMO_ID]) {
+      const demo = createReviewDemoHypothesis();
+      commit({
+        ...project,
+        hypotheses: { ...project.hypotheses, [REVIEW_DEMO_ID]: demo },
+        hypothesisOrder: [...project.hypothesisOrder, REVIEW_DEMO_ID],
+        currentId: REVIEW_DEMO_ID,
+      });
+    } else {
+      commit({ ...project, currentId: REVIEW_DEMO_ID });
+    }
+    const h = project.hypotheses[REVIEW_DEMO_ID];
+    const eq = h.equivs[0];
+    const items: ReviewItem[] = [];
+    if (eq) {
+      items.push({
+        id: uid('ri'),
+        target: { kind: 'equiv', equivId: eq.id },
+        action: 'retract',
+        note: '实验室复核：东西两段居住面是否同一层面',
+        label: describeTarget(h, { kind: 'equiv', equivId: eq.id }) ?? '',
+        createdAt: Date.now(),
+      });
+    }
+    session = {
+      ...session,
+      selection: { type: 'none' },
+      pending: null,
+      explainFrom: null,
+      explainTo: null,
+      review: { id: uid('rev'), hypothesisId: REVIEW_DEMO_ID, items, createdAt: Date.now() },
+    };
+    persist();
+    emit();
+  },
+
   // ---------- 节点位置 ----------
   setClassPosition(root: string, pos: { x: number; y: number }): void {
     updateCurrent((h) => ({ ...h, positions: { ...h.positions, [root]: pos } }));
@@ -434,11 +599,17 @@ const store = {
       hypothesisOrder: order,
       currentId: project.currentId === id ? order[0] : project.currentId,
     });
+    if (session.review?.hypothesisId === id) {
+      session = { ...session, review: null };
+      persist();
+      emit();
+    }
   },
 
   resetToSample(): void {
     commit(initialProject());
-    session = { selection: { type: 'none' }, pending: null, explainFrom: null, explainTo: null };
+    session = { selection: { type: 'none' }, pending: null, explainFrom: null, explainTo: null, review: null };
+    persist();
     emit();
   },
 };
